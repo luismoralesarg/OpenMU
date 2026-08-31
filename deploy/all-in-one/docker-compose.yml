@@ -30,6 +30,7 @@ services:
     working_dir: /app/
     volumes:
       - ./.htpasswd:/etc/nginx/.htpasswd
+      - ./plugins:/app/plugins:ro
     depends_on:
       - database
 

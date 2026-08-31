@@ -6,6 +6,7 @@ namespace MUnique.OpenMU.PlugIns;
 
 using System.Collections.Concurrent;
 using System.ComponentModel.Design;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json.Serialization;
@@ -426,7 +427,12 @@ public class PlugInManager
 
                 try
                 {
-                    var assembly = Assembly.LoadFile("plugins\\" + configuration.ExternalAssemblyName);
+                    // Assembly.LoadFile requires an absolute, OS-correct path - a
+                    // hardcoded "plugins\\" + name is neither: it's relative, and
+                    // the backslash isn't a valid separator on Linux, where this
+                    // server actually runs in its Docker image.
+                    var pluginPath = Path.Combine(AppContext.BaseDirectory, "plugins", configuration.ExternalAssemblyName);
+                    var assembly = Assembly.LoadFile(pluginPath);
                     this.DiscoverAndRegisterPlugIns(assembly);
                 }
                 catch (Exception e)
