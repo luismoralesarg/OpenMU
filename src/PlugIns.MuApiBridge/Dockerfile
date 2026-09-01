@@ -18,6 +18,13 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 COPY . .
+
+# Persistence's build shells out to its own SourceGenerator tool with
+# --no-build, so that tool must already exist on disk before anything
+# that depends on Persistence (like this plugin) can build.
+WORKDIR /src/Persistence/SourceGenerator
+RUN dotnet build MUnique.OpenMU.Persistence.SourceGenerator.csproj -c Release
+
 WORKDIR /src/PlugIns.MuApiBridge
 RUN dotnet build MUnique.OpenMU.PlugIns.MuApiBridge.csproj -c Release -o /out
 
