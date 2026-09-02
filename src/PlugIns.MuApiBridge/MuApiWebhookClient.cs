@@ -4,6 +4,7 @@
 
 namespace MUnique.OpenMU.PlugIns.MuApiBridge;
 
+using System.Net.Http;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
 
