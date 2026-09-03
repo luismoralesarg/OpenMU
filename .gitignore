@@ -323,3 +323,6 @@ src/AdminPanel/wwwroot/content/js/app.js.map
 
 # AI
 .opencode/
+
+# Real secrets for the mu-api service (see deploy/all-in-one/.env.example)
+deploy/all-in-one/.env
