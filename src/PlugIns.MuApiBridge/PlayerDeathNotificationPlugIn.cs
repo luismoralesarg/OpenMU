@@ -33,8 +33,16 @@ public class PlayerDeathNotificationPlugIn : IAttackableGotKilledPlugIn, ISuppor
 
         this.Configuration ??= this.CreateDefaultConfiguration();
 
+        // KillerName is resolved the same way for a monster or a player
+        // (the engine calls attacker.GetName() in both cases), so this
+        // covers "murió por Lich Elite" and "murió por OtroJugador" alike.
+        // Position is still the death coordinates here - the respawn that
+        // moves it runs 3s later on a separate, unawaited task.
         var killerName = player.LastDeath?.KillerName;
-        var detail = string.IsNullOrEmpty(killerName) ? "muerte" : killerName;
+        var position = player.Position;
+        var detail = string.IsNullOrEmpty(killerName)
+            ? $"muerte en ({position.X}, {position.Y})"
+            : $"{killerName} ({position.X}, {position.Y})";
 
         var payload = new WebhookEventPayload(
             Type: "player_died",
