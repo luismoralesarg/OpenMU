@@ -8,7 +8,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MUnique.OpenMU.GameLogic;
-using MUnique.OpenMU.GameLogic.Attributes;
 using MUnique.OpenMU.GameLogic.PlugIns;
 using MUnique.OpenMU.PlugIns;
 
@@ -95,7 +94,7 @@ public class CharacterStatusReporterPlugIn : IPeriodicTaskPlugIn, IPlayerGainedE
         var payload = new CharacterStatusPayload(
             AccountName: account.LoginName,
             CharacterName: character.Name,
-            Level: (int)player.Attributes![Stats.Level],
+            Level: player.Level,
             MapName: mapDefinition?.Name.ToString() ?? string.Empty,
             MapNumber: mapDefinition?.Number ?? 0,
             PositionX: player.Position.X,
