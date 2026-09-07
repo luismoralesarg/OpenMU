@@ -30,6 +30,25 @@ using MUnique.OpenMU.PlugIns;
 [Guid("3D4B7B7A-6C90-4E36-8C0C-8B7B6B0B2B4E")]
 public class ItemPickupNotificationPlugIn : IPeriodicTaskPlugIn, ISupportCustomConfiguration<MuApiBridgeConfiguration>, ISupportDefaultCustomConfiguration
 {
+    /// <summary>
+    /// The classic MU jewels, identified by (Group, Number) - there's no
+    /// "is this a jewel" flag on <see cref="ItemDefinition"/>. Mirrors
+    /// mu-api's domain.JewelKinds exactly (internal/domain/jewel.go) -
+    /// keep both lists in sync if a jewel is ever added or renamed.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<(byte Group, short Number), string> JewelNamesByGroupAndNumber =
+        new Dictionary<(byte, short), string>
+        {
+            [(14, 13)] = "Jewel of Bless",
+            [(14, 14)] = "Jewel of Soul",
+            [(12, 15)] = "Jewel of Chaos",
+            [(14, 16)] = "Jewel of Life",
+            [(14, 22)] = "Jewel of Creation",
+            [(14, 31)] = "Jewel of Guardian",
+            [(14, 41)] = "Gemstone",
+            [(14, 42)] = "Jewel of Harmony",
+        };
+
     private static readonly ConditionalWeakTable<Player, object> SubscribedPlayers = new();
 
     private DateTime _nextRunUtc = DateTime.UtcNow;
@@ -86,13 +105,32 @@ public class ItemPickupNotificationPlugIn : IPeriodicTaskPlugIn, ISupportCustomC
         }
 
         this.Configuration ??= this.CreateDefaultConfiguration();
-        if (!this.IsNotable(item))
+
+        var player = args.Player;
+        if (player.Account is not { } account)
         {
             return;
         }
 
-        var player = args.Player;
-        if (player.Account is not { } account)
+        var accountName = account.LoginName;
+        var characterName = player.SelectedCharacter?.Name ?? string.Empty;
+
+        // Jewels never meet IsNotable's level/Excellent/Ancient bar (they
+        // don't have a refine level or item options), so this is reported
+        // as its own event type regardless of that check.
+        if (this.TryGetJewelDetail(item, out var jewelDetail))
+        {
+            var jewelPayload = new WebhookEventPayload(
+                Type: "jewel_picked_up",
+                AccountName: accountName,
+                CharacterName: characterName,
+                Detail: jewelDetail);
+
+            await MuApiWebhookClient.SendAsync(this.Configuration, jewelPayload, player.Logger).ConfigureAwait(false);
+            return;
+        }
+
+        if (!this.IsNotable(item))
         {
             return;
         }
@@ -102,11 +140,29 @@ public class ItemPickupNotificationPlugIn : IPeriodicTaskPlugIn, ISupportCustomC
 
         var payload = new WebhookEventPayload(
             Type: "item_picked_up",
-            AccountName: account.LoginName,
-            CharacterName: player.SelectedCharacter?.Name ?? string.Empty,
+            AccountName: accountName,
+            CharacterName: characterName,
             Detail: detail);
 
         await MuApiWebhookClient.SendAsync(this.Configuration, payload, player.Logger).ConfigureAwait(false);
+    }
+
+    private bool TryGetJewelDetail(Item item, out string detail)
+    {
+        detail = string.Empty;
+        if (item.Definition is not { } definition)
+        {
+            return false;
+        }
+
+        if (!JewelNamesByGroupAndNumber.TryGetValue((definition.Group, definition.Number), out var jewelName))
+        {
+            return false;
+        }
+
+        var quantity = (int)Math.Round(item.Durability);
+        detail = quantity > 1 ? $"{jewelName} x{quantity}" : jewelName;
+        return true;
     }
 
     private bool IsNotable(Item item)
