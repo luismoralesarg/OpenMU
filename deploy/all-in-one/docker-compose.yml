@@ -10,6 +10,7 @@ services:
     depends_on:
       - openmu-startup
       - mu-api
+      - mu-web
 
   openmu-startup:
     image: munique/openmu
@@ -52,6 +53,14 @@ services:
       - ${MU_API_FIREBASE_CREDENTIALS_PATH:-/root/secrets/firebase-credentials.json}:/run/secrets/firebase-credentials.json:ro
     depends_on:
       - database
+
+  mu-web:
+    build:
+      context: ../../../mu-web
+      args:
+        VITE_MU_API_BASE_URL: https://api.mupalmira.com.ar
+        VITE_RECAPTCHA_SITE_KEY: ${MU_API_RECAPTCHA_SITE_KEY:-}
+    container_name: mu-web
 
   database:
     image: postgres
