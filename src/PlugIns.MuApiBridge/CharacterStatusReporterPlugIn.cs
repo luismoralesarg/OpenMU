@@ -5,6 +5,7 @@
 namespace MUnique.OpenMU.PlugIns.MuApiBridge;
 
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using MUnique.OpenMU.GameLogic;
@@ -60,11 +61,13 @@ public class CharacterStatusReporterPlugIn : IPeriodicTaskPlugIn, IPlayerGainedE
         this.Configuration ??= this.CreateDefaultConfiguration();
         this._nextRunUtc = DateTime.UtcNow + TimeSpan.FromSeconds(Math.Max(1, this.Configuration.CharacterStatusReportIntervalSeconds));
 
+        // In parallel, not one await per player in sequence - the shared
+        // HttpClient handles concurrent requests fine, and a slow or
+        // barely-timing-out response for one player must not delay every
+        // other player's report and push their gap past onlineThreshold
+        // on mu-api's side.
         var players = await gameContext.GetPlayersAsync().ConfigureAwait(false);
-        foreach (var player in players)
-        {
-            await this.ReportPlayerStatusAsync(player).ConfigureAwait(false);
-        }
+        await Task.WhenAll(players.Select(p => this.ReportPlayerStatusAsync(p).AsTask())).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
