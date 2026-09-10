@@ -70,6 +70,23 @@ To renew it, run this command:
 Of course, it would make sense to add a cron job (e.g. once a week) on your host
 machine for that.
 
+## Actualizar mu-api/mu-web (redeploy)
+
+Con `mu-api`/`mu-web` ya corriendo como servicios de este mismo
+docker-compose (build local, no imagen prebuilt), `./deploy.sh` hace el
+pull de los 3 repos, reconstruye esas dos imágenes, aplica las
+migraciones pendientes de mu-api contra el contenedor `database` (sin
+necesitar `psql` ni un DSN en la terminal del host - ver
+`mu-api/scripts/run-migrations.sh`) y reinicia los contenedores:
+
+```bash
+cd deploy/all-in-one
+./deploy.sh
+```
+
+Asume el mismo layout de carpetas hermanas que ya usa `docker-compose.yml`
+(`../../../mu-api`, `../../../mu-web`).
+
 ## What's next
 
 The server is automatically started and initialized for Season 6. You can start
