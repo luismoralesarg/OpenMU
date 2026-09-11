@@ -81,7 +81,7 @@ public static class MuApiWebhookClient
 /// Wire format of one event, matching mu-api's
 /// internal/adapters/inbound/http/webhook_handler.go#gameEventRequest.
 /// </summary>
-/// <param name="Type">One of "player_died", "item_picked_up", "jewel_picked_up", "level_up" or "session_started".</param>
+/// <param name="Type">One of "player_died", "item_picked_up", "jewel_picked_up", "level_up", "session_started" or "session_ended".</param>
 /// <param name="AccountName">The account's login name.</param>
 /// <param name="CharacterName">The character's name.</param>
 /// <param name="Detail">Killer name for deaths, item/jewel designation for pickups, reached level for level-ups.</param>
