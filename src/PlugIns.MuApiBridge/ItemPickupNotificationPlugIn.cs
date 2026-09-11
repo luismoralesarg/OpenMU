@@ -47,7 +47,34 @@ public class ItemPickupNotificationPlugIn : IPeriodicTaskPlugIn, ISupportCustomC
             [(14, 31)] = "Jewel of Guardian",
             [(14, 41)] = "Gemstone",
             [(14, 42)] = "Jewel of Harmony",
+
+            // Bundles - a separate ItemDefinition per
+            // Persistence/Initialization/*/Items/PackedJewels.cs, not
+            // just a different Level of the row above. See
+            // PackedJewelGroupAndNumbers/TryGetJewelDetail for how their
+            // quantity is computed differently (Durability is always 1
+            // on these).
+            [(12, 30)] = "Jewel of Bless",
+            [(12, 31)] = "Jewel of Soul",
+            [(12, 141)] = "Jewel of Chaos",
+            [(12, 136)] = "Jewel of Life",
+            [(12, 137)] = "Jewel of Creation",
+            [(12, 138)] = "Jewel of Guardian",
+            [(12, 139)] = "Gemstone",
+            [(12, 140)] = "Jewel of Harmony",
         };
+
+    /// <summary>
+    /// The subset of <see cref="JewelNamesByGroupAndNumber"/> that are
+    /// packed/"bundle" variants - their quantity comes from
+    /// <c>(Level+1)*10</c> instead of <see cref="Item.Durability"/> (which
+    /// is always 1 on these). The multiplier is only documented in
+    /// GameLogic/ItemPriceCalculator.cs's pricing formula.
+    /// </summary>
+    private static readonly IReadOnlySet<(byte Group, short Number)> PackedJewelGroupAndNumbers = new HashSet<(byte, short)>
+    {
+        (12, 30), (12, 31), (12, 136), (12, 137), (12, 138), (12, 139), (12, 140), (12, 141),
+    };
 
     private static readonly ConditionalWeakTable<Player, object> SubscribedPlayers = new();
 
@@ -160,7 +187,9 @@ public class ItemPickupNotificationPlugIn : IPeriodicTaskPlugIn, ISupportCustomC
             return false;
         }
 
-        var quantity = (int)Math.Round(item.Durability);
+        var quantity = PackedJewelGroupAndNumbers.Contains((definition.Group, definition.Number))
+            ? (item.Level + 1) * 10
+            : (int)Math.Round(item.Durability);
         detail = quantity > 1 ? $"{jewelName} x{quantity}" : jewelName;
         return true;
     }
