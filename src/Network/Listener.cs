@@ -148,6 +148,21 @@ public class Listener
             if (cancel is null || !cancel.Cancel)
             {
                 socket.NoDelay = true; // todo: option?
+
+                // Detect "ghost" connections: a client that crashes, is force-killed,
+                // or loses network without sending a proper TCP FIN/RST leaves this
+                // socket sitting in ESTABLISHED state forever as far as the OS is
+                // concerned - neither side is sending anything, so plain TCP never
+                // notices the peer is gone, and the character stays "online" with no
+                // way for the player to reconnect until someone disconnects it by
+                // hand. Enabling keepalive makes the OS probe an idle connection and
+                // tear it down (firing Connection.OnCompleteAsync -> DisconnectAsync,
+                // same as any other disconnect) if the peer stops answering.
+                socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 30);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 10);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 3);
+
                 var connection = this.CreateConnection(socket);
 
                 if (this.ClientAccepted is { } clientAccepted)

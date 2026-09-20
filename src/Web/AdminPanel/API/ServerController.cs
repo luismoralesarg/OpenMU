@@ -69,6 +69,32 @@ namespace MUnique.OpenMU.Web.API
         }
 
         /// <summary>
+        /// Forcibly disconnects the given account's currently connected player, if
+        /// any. Backs mu-api's self-service "Desconectar personaje" feature - lets
+        /// a player recover from a "ghost" session (client crashed or was closed
+        /// without a clean logout, but the character is still shown online)
+        /// without needing a GM to run <c>/disconnect</c> for them.
+        /// </summary>
+        /// <param name="accountName">Name of the account.</param>
+        /// <returns>True, if a connected player was found and disconnected.</returns>
+        [HttpPost]
+        [Route("disconnect/{accountName}")]
+        public async Task<IActionResult> DisconnectAsync(string accountName)
+        {
+            foreach (var server in this._gameServers.Values.OfType<GameServer>())
+            {
+                var players = await server.Context.GetPlayersAsync().ConfigureAwait(false);
+                if (players.FirstOrDefault(p => p.Account?.LoginName == accountName) is { } player)
+                {
+                    await player.DisconnectAsync().ConfigureAwait(false);
+                    return this.Ok(true);
+                }
+            }
+
+            return this.Ok(false);
+        }
+
+        /// <summary>
         /// Gets the server state.
         /// </summary>
         [HttpGet]
