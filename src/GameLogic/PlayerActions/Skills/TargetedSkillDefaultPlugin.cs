@@ -188,6 +188,12 @@ public class TargetedSkillDefaultPlugin : TargetedSkillPluginBase
 
         if (skill.Target == SkillTarget.ExplicitWithImplicitInRange)
         {
+            // Splash onto bystanders is only allowed when the player deliberately aimed the skill
+            // at another player (the client only allows selecting a player as the explicit target
+            // when the user opts into PvP, e.g. via Ctrl+Click). Aiming at a monster must never
+            // incidentally hit nearby players, even if AreaSkillHitsPlayer is enabled server-wide.
+            var pvpIntended = targetedTarget is Player && player.GameContext.Configuration.AreaSkillHitsPlayer;
+
             if (player.GameContext.PlugInManager.GetStrategy<short, IAreaSkillTargetFilter>(skill.Number) is { } filterPlugin)
             {
                 var rotationToTarget = (byte)(player.Position.GetAngleDegreeTo(targetedTarget.Position) / 360.0 * 255.0);
@@ -195,7 +201,7 @@ public class TargetedSkillDefaultPlugin : TargetedSkillPluginBase
                     player.CurrentMap?
                         .GetAttackablesInRange(player.Position, skill.Range)
                         .Where(a => a != player)
-                        .Where(a => player.GameContext.Configuration.AreaSkillHitsPlayer || a is NonPlayerCharacter)
+                        .Where(a => a is NonPlayerCharacter || pvpIntended)
                         .Where(a => !a.IsAtSafezone())
                         .Where(a => filterPlugin.IsTargetWithinBounds(player, a, player.Position, rotationToTarget))
                         .ToList();
@@ -212,9 +218,9 @@ public class TargetedSkillDefaultPlugin : TargetedSkillPluginBase
             else if (skill.ImplicitTargetRange > 0)
             {
                 var targetsOfTarget = targetedTarget.CurrentMap?.GetAttackablesInRange(targetedTarget.Position, skill.ImplicitTargetRange) ?? Enumerable.Empty<IAttackable>();
-                if (!player.GameContext.Configuration.AreaSkillHitsPlayer && targetedTarget is Monster)
+                if (!pvpIntended)
                 {
-                    return targetsOfTarget.OfType<Monster>();
+                    return targetsOfTarget.Where(t => t is not Player);
                 }
 
                 return targetsOfTarget;
