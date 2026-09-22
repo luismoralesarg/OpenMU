@@ -1,5 +1,14 @@
 services:
   openmu-startup:
+    # In prod we build from our own fork's source (src/Startup/Dockerfile)
+    # instead of the public munique/openmu image, so core-code fixes (not
+    # just the PlugIns.MuApiBridge plugin) actually take effect. Tagging it
+    # under a name that isn't "munique/openmu" avoids ever accidentally
+    # pulling the public image over our locally built one.
+    image: openmu-fork:latest
+    build:
+      context: ../../src
+      dockerfile: Startup/Dockerfile
     restart: "unless-stopped"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
