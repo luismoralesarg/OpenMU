@@ -49,10 +49,17 @@ public class ForceSkillAction : TargetedSkillDefaultPlugin
             return targetedTarget.GetAsEnumerable();
         }
 
+        // Splash onto bystanders is only allowed when the player deliberately aimed Force Wave at
+        // another player (the client only lets you select a player as the target when you opt into
+        // PvP, e.g. via Ctrl+Click). Aiming at a monster must never incidentally hit nearby players.
+        var pvpIntended = targetedTarget is Player && player.GameContext.Configuration.AreaSkillHitsPlayer;
+
         var targetsInRange = player.CurrentMap?
                     .GetAttackablesInRange(player.Position, skill.Range + 4)
                     .Where(a => a != player)
-                    .Where(a => !a.IsAtSafezone()).ToList()
+                    .Where(a => !a.IsAtSafezone())
+                    .Where(a => a is not Player || pvpIntended)
+                    .ToList()
             ?? [];
 
         if (skill.AreaSkillSettings is { UseFrustumFilter: true } areaSkillSettings)

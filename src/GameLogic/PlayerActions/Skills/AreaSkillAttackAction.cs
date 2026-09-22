@@ -114,7 +114,13 @@ public class AreaSkillAttackAction
             yield return extraTarget;
         }
 
-        foreach (var target in GetTargetsInRange(player, targetAreaCenter, skill, rotation))
+        // Splash onto bystanders is only allowed when the player deliberately aimed the skill at
+        // another player (the client only lets you select a player as the explicit/extra target
+        // when you opt into PvP, e.g. via Ctrl+Click). Aiming at a monster - or no one in particular
+        // for a ground-targeted skill - must never incidentally hit nearby players.
+        var pvpIntended = extraTarget is Player && player.GameContext.Configuration.AreaSkillHitsPlayer;
+
+        foreach (var target in GetTargetsInRange(player, targetAreaCenter, skill, rotation, pvpIntended))
         {
             // Skip the extra target if we already yielded it
             if (target.Id == extraTargetId)
@@ -126,7 +132,7 @@ public class AreaSkillAttackAction
         }
     }
 
-    private static IEnumerable<IAttackable> GetTargetsInRange(Player player, Point targetAreaCenter, Skill skill, byte rotation)
+    private static IEnumerable<IAttackable> GetTargetsInRange(Player player, Point targetAreaCenter, Skill skill, byte rotation, bool pvpIntended)
     {
         var range = skill.AreaSkillSettings?.EffectRange > 0 ? skill.AreaSkillSettings.EffectRange : skill.Range;
         var targetsInRange = player.CurrentMap?
@@ -147,7 +153,16 @@ public class AreaSkillAttackAction
             targetsInRange = targetsInRange.Where(a => a.GetDistanceTo(targetAreaCenter) < skill.AreaSkillSettings.TargetAreaDiameter * 0.5f);
         }
 
-        if (!player.GameContext.Configuration.AreaSkillHitsPlayer)
+        if (skill.SkillType == SkillType.Buff)
+        {
+            // Area buffs (e.g. party heals) must keep using the plain server-wide toggle -
+            // they aren't an attack, so there's no "PvP intent" to gate on.
+            if (!player.GameContext.Configuration.AreaSkillHitsPlayer)
+            {
+                targetsInRange = targetsInRange.Where(a => a is not Player);
+            }
+        }
+        else if (!pvpIntended)
         {
             targetsInRange = targetsInRange.Where(a => a is not Player);
         }
