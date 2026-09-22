@@ -1,20 +1,28 @@
 #!/usr/bin/env bash
 # Redespliega todo lo que puede haber cambiado: pull de los 3 repos,
-# reconstruye mu-api/mu-web, recompila el plugin PlugIns.MuApiBridge de
-# OpenMU (el .dll que va en plugins/ - openmu-startup en sí usa la imagen
-# prebuilt munique/openmu, no hay nada que reconstruir ahí), aplica las
-# migraciones de mu-api contra el Postgres de Docker, y reinicia mu-api/
-# mu-web siempre.
+# reconstruye mu-api/mu-web/openmu-startup, recompila el plugin
+# PlugIns.MuApiBridge de OpenMU (el .dll que va en plugins/), aplica las
+# migraciones de mu-api contra el Postgres de Docker, y reinicia los
+# contenedores cuya imagen haya cambiado de verdad.
 #
-# El paso del plugin importa tanto como los otros dos: es un .dll aparte
+# openmu-startup se buildea siempre desde nuestro propio fork
+# (docker-compose.prod.yml apunta su "build" a src/Startup/Dockerfile en
+# vez de usar la imagen prebuilt munique/openmu) - así los fixes al core
+# del server (no solo al plugin) quedan activos. El build usa la cache de
+# capas de Docker como siempre, así que cuando no cambió nada relevante
+# es prácticamente instantáneo. "compose up -d" ya sabe no reiniciar un
+# contenedor cuya imagen no cambió, así que no hace falta un chequeo
+# manual para este caso (a diferencia del plugin, ver más abajo).
+#
+# El paso del plugin importa tanto como los otros: es un .dll aparte
 # que PlugInManager carga una sola vez al arrancar openmu-startup - un
 # cambio en src/PlugIns.MuApiBridge/*.cs que no pasa por este paso queda
 # pisado en silencio (el contenedor sigue corriendo el .dll viejo para
 # siempre, sin ningún error visible) hasta el día que alguien se acuerde
 # de recompilarlo a mano - así se nos escapó el aviso de joyas recogidas
-# la primera vez. openmu-startup solo se reinicia (desconectando a los
-# jugadores conectados) cuando el .dll recién compilado es distinto del
-# que ya está en plugins/ - no en cada deploy porque sí.
+# la primera vez. Como el plugin se monta aparte (no es parte de la
+# imagen), "compose up -d" no detecta por sí solo si cambió, así que acá
+# sí seguimos comparando el .dll a mano y forzando un restart si hace falta.
 #
 # Asume el mismo layout de carpetas hermanas que ya da por sentado
 # docker-compose.yml (contexts ../../../mu-api y ../../../mu-web):
@@ -54,8 +62,8 @@ for dir in "$OPENMU_DIR" "$MU_API_DIR" "$MU_WEB_DIR"; do
     git -C "$dir" pull --ff-only
 done
 
-echo "== 2/5: reconstruyendo imágenes de mu-api y mu-web =="
-compose build mu-api mu-web
+echo "== 2/5: reconstruyendo imágenes de mu-api, mu-web y openmu-startup (fork) =="
+compose build mu-api mu-web openmu-startup
 
 echo "== 3/5: recompilando el plugin de OpenMU (PlugIns.MuApiBridge) =="
 (
@@ -76,16 +84,20 @@ echo "== 4/5: aplicando migraciones de mu-api =="
 "$MU_API_DIR/scripts/run-migrations.sh"
 
 echo "== 5/5: reiniciando contenedores =="
-compose up -d mu-api mu-web
+# "up -d" recrea cada contenedor solo si su imagen cambió de verdad, así
+# que esto ya cubre el caso normal de openmu-startup: si el build del
+# paso 2/5 dio una imagen nueva (porque cambió algo en src/), se reinicia
+# solo; si el build fue 100% cache hit, queda como estaba.
+compose up -d mu-api mu-web openmu-startup
 if [ "$PLUGIN_CHANGED" = true ]; then
-    # openmu-startup solo carga el .dll de plugins/ al arrancar - "up -d"
-    # no alcanza si la imagen del contenedor no cambió, hace falta un
-    # restart real. Solo lo hacemos cuando el plugin de verdad cambió,
-    # para no desconectar jugadores en cada deploy porque sí.
+    # El plugin se monta aparte (./plugins de solo lectura), no es parte
+    # de la imagen - "up -d" no tiene forma de notar que cambió, así que
+    # acá sí forzamos el restart a mano cuando el .dll recompilado difiere
+    # del que ya estaba copiado.
     echo "El plugin cambió - reiniciando openmu-startup (esto desconecta a los jugadores conectados)..."
     compose restart openmu-startup
 else
-    echo "El plugin no cambió - no hace falta reiniciar openmu-startup."
+    echo "El plugin no cambió."
 fi
 
 echo
