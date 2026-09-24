@@ -269,15 +269,32 @@ public class CastleSiegePlugIn : IPeriodicTaskPlugIn, IObjectAddedToMapPlugIn, I
                 await this.SendStateNotificationAsync(context).ConfigureAwait(false);
                 break;
             case CastleSiegeState.Ready:
+                // Resolved here, once registration/marks are final, so it's ready before Start begins
+                // (and before the first Crown tick, which relies on it to attribute a holder to a guild).
+                await context.BuildFinalGuildListAsync().ConfigureAwait(false);
                 await context.NpcController.PrepareAsync().ConfigureAwait(false);
                 await context.NpcController.CloseGatesAsync().ConfigureAwait(false);
                 break;
             case CastleSiegeState.Start:
+                // Normally already built when Ready was entered - rebuilt here too (idempotent, registrations
+                // can't change after RegisterMark) so a forced jump straight into Start (tests, admin ForceStart)
+                // never runs a battle with an empty FinalGuildList.
+                await context.BuildFinalGuildListAsync().ConfigureAwait(false);
                 await context.NpcController.PrepareAsync().ConfigureAwait(false);
                 await context.NpcController.CloseGatesAsync().ConfigureAwait(false);
                 await context.NpcController.SpawnMachinesAsync().ConfigureAwait(false);
                 break;
             case CastleSiegeState.End:
+                // Whichever guild most recently held the Crown for the configured hold time (tracked live by
+                // CastleSiegeCrownIntelligence into MiddleOwnerGuildId) becomes the new owner. If nobody
+                // completed a capture, the previous owner (if any) keeps the castle - no change needed.
+                if (context.MiddleOwnerGuildId is { } capturingGuildId
+                    && context.FinalGuildList.TryGetValue(capturingGuildId, out var capturingGuild))
+                {
+                    context.SiegeData.OwnerGuildId = capturingGuild.PersistentGuildId;
+                    context.SiegeData.IsOccupied = true;
+                }
+
                 await context.SaveNpcStatesAsync().ConfigureAwait(false);
                 await context.NpcController.DespawnMachinesAsync().ConfigureAwait(false);
                 break;
@@ -287,6 +304,7 @@ public class CastleSiegePlugIn : IPeriodicTaskPlugIn, IObjectAddedToMapPlugIn, I
                 context.ParticipantTracking.Clear();
                 await context.NpcController.DespawnAllAsync().ConfigureAwait(false);
                 context.MiddleOwnerGuildId = null;
+                context.CrownHoldingGuildId = null;
                 context.CrownUser = null;
                 Array.Clear(context.SwitchUsers);
                 context.CrownAccumulatedTime = TimeSpan.Zero;

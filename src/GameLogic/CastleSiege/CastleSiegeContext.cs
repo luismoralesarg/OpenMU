@@ -7,6 +7,7 @@ namespace MUnique.OpenMU.GameLogic.CastleSiege;
 using System.Threading;
 using MUnique.OpenMU.DataModel.Configuration;
 using MUnique.OpenMU.DataModel.Entities;
+using MUnique.OpenMU.Interfaces;
 
 /// <summary>
 /// Holds the runtime state of Castle Siege for one game context.
@@ -74,9 +75,17 @@ public class CastleSiegeContext : IEventStateProvider
     public System.Collections.Concurrent.ConcurrentDictionary<Guid, CastleSiegeParticipant> ParticipantTracking { get; } = new();
 
     /// <summary>
-    /// Gets or sets the runtime identifier of the guild which most recently captured the Crown.
+    /// Gets or sets the runtime identifier of the guild which most recently captured the Crown, i.e. held it
+    /// continuously for at least <see cref="CastleSiegeConfiguration.CrownHoldTimeSeconds"/>. This is what
+    /// determines the new castle owner when the <see cref="CastleSiegeState.End"/> state is entered.
     /// </summary>
     public uint? MiddleOwnerGuildId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the runtime identifier of the guild currently accumulating <see cref="CrownAccumulatedTime"/>
+    /// towards a capture. Reset to <see langword="null"/> whenever the Crown becomes unheld or changes hands.
+    /// </summary>
+    public uint? CrownHoldingGuildId { get; set; }
 
     /// <summary>
     /// Gets the active Castle Siege NPCs.
@@ -252,6 +261,46 @@ public class CastleSiegeContext : IEventStateProvider
     }
 
     /// <summary>
+    /// Resolves the registered guilds into their final battle sides: the current castle owner (if any) as
+    /// <see cref="CastleSiegeJoinSide.Defense"/>, and up to <see cref="CastleSiegeConfiguration.MaxAttackingGuilds"/>
+    /// registered guilds - ordered by submitted marks, ties broken by earlier registration - as attackers.
+    /// Every guild in the resulting alliances is added too, so any of their members are recognized regardless of
+    /// which specific guild-within-alliance they belong to (see <see cref="GetPlayerJoinSide"/>).
+    /// </summary>
+    public async ValueTask BuildFinalGuildListAsync()
+    {
+        this.FinalGuildList.Clear();
+
+        if (this._gameContext is not IGameServerContext gameServerContext)
+        {
+            return;
+        }
+
+        var guildServer = gameServerContext.GuildServer;
+
+        if (this.SiegeData.OwnerGuildId is { } ownerGuildId
+            && await this.ResolveGuildNameAsync(ownerGuildId).ConfigureAwait(false) is { } ownerName)
+        {
+            await this.AddSideAsync(guildServer, ownerGuildId, ownerName, CastleSiegeJoinSide.Defense).ConfigureAwait(false);
+        }
+
+        var attackSides = new[] { CastleSiegeJoinSide.Attack1, CastleSiegeJoinSide.Attack2, CastleSiegeJoinSide.Attack3 };
+        var maxAttackers = Math.Min(Math.Max(this.Configuration.MaxAttackingGuilds, 0), attackSides.Length);
+        var selectedAttackers = this.RegisteredGuilds.Values
+            .Where(registration => registration.GuildId != this.SiegeData.OwnerGuildId)
+            .OrderByDescending(registration => registration.Marks)
+            .ThenBy(registration => registration.RegistrationOrder)
+            .Take(maxAttackers)
+            .ToList();
+
+        for (var i = 0; i < selectedAttackers.Count; i++)
+        {
+            var registration = selectedAttackers[i];
+            await this.AddSideAsync(guildServer, registration.GuildId, registration.GuildName, attackSides[i]).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
     /// Deletes all guild registrations of the completed cycle.
     /// </summary>
     public async ValueTask ClearRegistrationsAsync()
@@ -414,6 +463,50 @@ public class CastleSiegeContext : IEventStateProvider
     {
         var remaining = this.StateEndTimeUtc - utcNow;
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
+
+    private async ValueTask AddSideAsync(IGuildServer guildServer, Guid persistentGuildId, string guildName, CastleSiegeJoinSide side)
+    {
+        var runtimeId = await guildServer.GetGuildIdByNameAsync(guildName).ConfigureAwait(false);
+        if (runtimeId == 0)
+        {
+            // The guild couldn't be resolved to a currently known runtime guild (e.g. it was disbanded
+            // since it registered/became owner) - it simply won't be recognized as a side this cycle.
+            return;
+        }
+
+        this.FinalGuildList[runtimeId] = new CastleSiegeGuildParticipant
+        {
+            GuildId = runtimeId,
+            PersistentGuildId = persistentGuildId,
+            GuildName = guildName,
+            Side = side,
+            IsAllianceMaster = true,
+        };
+
+        var allianceGuilds = await guildServer.GetAllianceGuildsAsync(runtimeId).ConfigureAwait(false) ?? [];
+        foreach (var allianceGuild in allianceGuilds)
+        {
+            if (allianceGuild.Id == runtimeId)
+            {
+                continue;
+            }
+
+            this.FinalGuildList[allianceGuild.Id] = new CastleSiegeGuildParticipant
+            {
+                GuildId = allianceGuild.Id,
+                PersistentGuildId = persistentGuildId,
+                GuildName = allianceGuild.GuildName,
+                Side = side,
+                IsAllianceMaster = false,
+            };
+        }
+    }
+
+    private async ValueTask<string?> ResolveGuildNameAsync(Guid persistentGuildId)
+    {
+        using var context = this._gameContext.PersistenceContextProvider.CreateNewTypedContext(typeof(Guild), false, this._gameContext.Configuration);
+        return (await context.GetByIdAsync<Guild>(persistentGuildId).ConfigureAwait(false))?.Name;
     }
 
     private static void CopyScalarState(CastleSiegeData source, CastleSiegeData target)

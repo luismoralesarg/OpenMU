@@ -71,6 +71,35 @@ public sealed class CastleSiegeCrownIntelligence : CastleSiegeNpcIntelligenceBas
         crown.State = this._context.IsCrownAvailable
             ? CastleSiegeCrownState.Idle
             : CastleSiegeCrownState.Locked;
+
+        if (!this._context.IsCrownAvailable)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        // Only a player whose guild made it into this cycle's final battle sides can capture the Crown -
+        // a bystander (no guild, or a guild that never registered) standing on it holds nothing.
+        var holdingGuildId = candidate?.GuildStatus is { } guildStatus
+                             && this._context.FinalGuildList.ContainsKey(guildStatus.GuildId)
+            ? guildStatus.GuildId
+            : (uint?)null;
+
+        if (holdingGuildId != this._context.CrownHoldingGuildId)
+        {
+            // The holder changed (including to/from "nobody") - progress towards a capture resets, same as
+            // the original MU mechanic where losing the Crown loses your hold-time progress too.
+            this._context.CrownHoldingGuildId = holdingGuildId;
+            this._context.CrownAccumulatedTime = TimeSpan.Zero;
+        }
+        else if (holdingGuildId is not null)
+        {
+            this._context.CrownAccumulatedTime += TrackingInterval;
+            if (this._context.CrownAccumulatedTime >= TimeSpan.FromSeconds(this._context.Configuration.CrownHoldTimeSeconds))
+            {
+                this._context.MiddleOwnerGuildId = holdingGuildId;
+            }
+        }
+
         return ValueTask.CompletedTask;
     }
 
