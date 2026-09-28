@@ -132,7 +132,7 @@ public class SpeedHackDetectPlugIn : IFeaturePlugIn, ISupportCustomConfiguration
         if (shouldRecordViolation)
         {
             eventArgs.IsCheatDetected = true;
-            await this.RecordViolationAsync(player, state, config).ConfigureAwait(false);
+            await this.RecordViolationAsync(player, state, config, "walk").ConfigureAwait(false);
         }
     }
 
@@ -178,13 +178,28 @@ public class SpeedHackDetectPlugIn : IFeaturePlugIn, ISupportCustomConfiguration
                 return;
             }
 
+            // Unlike the walk check above, this had no per-violation detail in the log - just the generic
+            // "Speedhack warning issued" from RecordViolationAsync, with no way to tell whether it was this
+            // check or the walk check that fired, or by how much. Logged here (inside the lock, same as the
+            // walk check) so every violation carries the exact numbers that produced it - attackSpeed feeds
+            // directly into minIntervalMs, so a legitimate high-attack-speed build (e.g. a Rage Fighter) that
+            // keeps tripping this despite a real, high AttackSpeed stat shows up here with real evidence
+            // instead of guesswork about what the formula "should" have allowed.
+            player.Logger.LogWarning(
+                "Speedhack detected on attack for player {0}: attackSpeed={1}, minIntervalMs={2:F1}, elapsedSinceLastAttack={3:F1}ms, tokensAfterRegen={4:F2}.",
+                player.Name,
+                attackSpeed,
+                minIntervalMs,
+                elapsedMs,
+                state.AttackTokens);
+
             shouldRecordViolation = true;
         }
 
         if (shouldRecordViolation)
         {
             eventArgs.IsCheatDetected = true;
-            await this.RecordViolationAsync(player, state, config).ConfigureAwait(false);
+            await this.RecordViolationAsync(player, state, config, "attack").ConfigureAwait(false);
         }
     }
 
@@ -247,7 +262,7 @@ public class SpeedHackDetectPlugIn : IFeaturePlugIn, ISupportCustomConfiguration
         return this._playerStates.GetValue(player, p => new SpeedHackState(this.Configuration?.MaxAttackTokens ?? 5.0));
     }
 
-    private async ValueTask RecordViolationAsync(Player player, SpeedHackState state, SpeedHackDetectConfiguration config)
+    private async ValueTask RecordViolationAsync(Player player, SpeedHackState state, SpeedHackDetectConfiguration config, string checkType)
     {
         var now = DateTime.UtcNow;
         bool shouldBan = false;
@@ -269,7 +284,10 @@ public class SpeedHackDetectPlugIn : IFeaturePlugIn, ISupportCustomConfiguration
                 state.AlertTimes.Dequeue();
             }
 
-            player.Logger.LogWarning("Speedhack warning issued for player {0}. Total warnings in last hour: {1}", player.Name, state.AlertTimes.Count);
+            // checkType (set by the caller: "walk" or "attack") disambiguates this from the detailed
+            // per-violation log line each check already writes above/before this call - without it, this
+            // was the only line an operator would see for a debounced-out-of-detail repeat violation.
+            player.Logger.LogWarning("Speedhack warning issued for player {0} ({1} check). Total warnings in last hour: {2}", player.Name, checkType, state.AlertTimes.Count);
 
             if (state.AlertTimes.Count > config.MaxWarnings)
             {
