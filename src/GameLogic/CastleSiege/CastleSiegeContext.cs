@@ -505,8 +505,11 @@ public class CastleSiegeContext : IEventStateProvider
 
     private async ValueTask<string?> ResolveGuildNameAsync(Guid persistentGuildId)
     {
-        using var context = this._gameContext.PersistenceContextProvider.CreateNewTypedContext(typeof(Guild), false, this._gameContext.Configuration);
-        return (await context.GetByIdAsync<Guild>(persistentGuildId).ConfigureAwait(false))?.Name;
+        // Fully qualified: MUnique.OpenMU.Interfaces (needed for IGameServerContext/IGuildServer above) also
+        // declares a "Guild" type (the plain data holder DataModel.Entities.Guild derives from) - a bare
+        // "Guild" here is ambiguous between the two.
+        using var context = this._gameContext.PersistenceContextProvider.CreateNewTypedContext(typeof(DataModel.Entities.Guild), false, this._gameContext.Configuration);
+        return (await context.GetByIdAsync<DataModel.Entities.Guild>(persistentGuildId).ConfigureAwait(false))?.Name;
     }
 
     private static void CopyScalarState(CastleSiegeData source, CastleSiegeData target)
